@@ -21,7 +21,7 @@ import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {FixedPointMathLib} from "solmate/src/utils/FixedPointMathLib.sol";
 
 import {TransientStorage} from "./TransientStorage.sol";
-import {IFlashConnector} from "./IFlashConnector.sol";
+import {IFlashConnector} from "./connectors/IFlashConnector.sol";
 
 import "forge-std/console.sol";
 
@@ -65,9 +65,10 @@ contract FishstickHook is BaseHook, TransientStorage {
 
     //todo: to separate file
     struct FlashLoanData {
-        address connector;
         uint256 desiredAmount0;
         uint256 desiredAmount1;
+        uint256 spread; // 0.01e18 < spread < 0.20e18 
+        address connector;
     }
 
     function _beforeSwap(
@@ -78,26 +79,51 @@ contract FishstickHook is BaseHook, TransientStorage {
     ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
         console.log("Before swap");
         FlashLoanData memory data = abi.decode(hookData, (FlashLoanData));
-        console.log(data.connector);
-
-        if (data.connector == address(0)) {
-            console.log("Going fallback");
-            data.connector = fallbackConnector;
+        if (!(0.01e18 < data.spread < 0.20e18)) {
+            revert("Invalid spread");
         }
 
-        console.log(data.connector);
-        
+        IFlashConnector cn = data.connector == address(0)
+            ? fallbackConnector
+            : IFlashConnector(data.connector);
 
-        // (uint128 amount0, uint128 amount1) = _jitAmounts(key, params);
+        (uint256 reserve0, uint256 reserve1) = cn.getAvailableReserves(
+            Currency.unwrap(key.currency0),
+            Currency.unwrap(key.currency1)
+        );
 
-        // (, , uint128 liquidity) = _createPosition(
-        //     key,
-        //     params,
-        //     amount0,
-        //     amount1,
-        //     hookData
-        // );
-        // _storeLiquidity(liquidity);
+        uint256 loanAmount0 = reserve0 > data.desiredAmount0
+            ? data.desiredAmount0
+            : reserve0;
+        uint256 loanAmount1 = reserve1 > data.desiredAmount1
+            ? data.desiredAmount1
+            : reserve1;
+
+        console.log(reserve0, reserve1);
+
+        cn.loan(
+            Currency.unwrap(key.currency0),
+            Currency.unwrap(key.currency1),
+            address(this),
+            loanAmount0,
+            loanAmount1
+        );
+
+        (uint160 sqrtPriceX96, , , ) = poolManager.getSlot0(key.toId());
+
+        (int24 tickLower, int24 tickUpper) = _calculateTicks(key, sqrtPriceX96, data.spread, params.zeroForOne);
+
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            TickMath.getSqrtPriceAtTick(tickLower),
+            TickMath.getSqrtPriceAtTick(tickUpper),
+            loanAmount0,
+            loanAmount1
+        );
+
+        _storeLiquidity(liquidity);
+        _storeTicks(tickLower, tickUpper);
+
 
         return (
             BaseHook.beforeSwap.selector,
@@ -105,6 +131,40 @@ contract FishstickHook is BaseHook, TransientStorage {
             0
         );
     }
+
+    function _calculateTicks(
+        PoolKey calldata poolKey,
+        uint160 sqrtPriceX96,   //todo: convert before
+        uint256 spread,
+        bool zeroForOne
+    ) internal pure override returns (int24, int24) {
+
+        uint160 _sqrtPriceLower = uint160(
+            FixedPointMathLib.mulDivDown(
+                uint256(sqrtPriceX96),
+                FixedPointMathLib.sqrt(1e18 - spread),
+                FixedPointMathLib.sqrt(1e18) //todo: hardcode?
+            )
+        );
+
+        uint160 _sqrtPriceUpper = uint160(
+            FixedPointMathLib.mulDivDown(
+                uint256(sqrtPriceX96),
+                FixedPointMathLib.sqrt(1e18 + spread),
+                FixedPointMathLib.sqrt(1e18)
+            )
+        );
+
+        int24 tickLower = TickMath.getTickAtSqrtPrice(
+            _sqrtPriceLower
+        );
+        int24 tickUpper = TickMath.getTickAtSqrtPrice(
+            _sqrtPriceUpper
+        );
+
+        return (tickLower, tickUpper);
+    }
+
     function _afterSwap(
         address sender,
         PoolKey calldata key,
@@ -113,5 +173,28 @@ contract FishstickHook is BaseHook, TransientStorage {
         bytes calldata hookData
     ) internal override returns (bytes4, int128) {
         return (BaseHook.afterSwap.selector, 0);
+    }
+
+    function _modifyLiquidity(
+        PoolKey memory key,
+        int24 tickLower,
+        int24 tickUpper,
+        int256 liquidityDelta,
+        bytes calldata hookData
+    )
+        internal
+        virtual
+        returns (BalanceDelta totalDelta, BalanceDelta feesAccrued)
+    {
+        (totalDelta, feesAccrued) = poolManager.modifyLiquidity(
+            key,
+            IPoolManager.ModifyLiquidityParams({
+                tickLower: tickLower,
+                tickUpper: tickUpper,
+                liquidityDelta: liquidityDelta,
+                salt: bytes32(0)
+            }),
+            hookData
+        );
     }
 }

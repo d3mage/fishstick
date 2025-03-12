@@ -13,7 +13,7 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 
 import {Hooks} from "v4-core/libraries/Hooks.sol";
-import {TickMath} from "v4-core/libraries/TickMath.sol";
+import {TickMath} from "v4-core/libraries/TickMath.sol"; 
 import {SqrtPriceMath} from "v4-core/libraries/SqrtPriceMath.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
@@ -22,6 +22,8 @@ import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 
 import "forge-std/console.sol";
 import {FishstickHook} from "../src/Fishstick.sol";
+import {IFlashConnector} from "../src/connectors/IFlashConnector.sol";
+import {DummyConnector} from "./DummyConnector.sol";
 
 contract TestFishtick is Test, Deployers {
     using CurrencyLibrary for Currency;
@@ -70,6 +72,7 @@ contract TestFishtick is Test, Deployers {
         uint160 sqrtPriceAtTickUpper = TickMath.getSqrtPriceAtTick(_u_Tick);
 
         uint256 ethToAdd = 1 ether;
+        
         uint128 liquidityDelta = LiquidityAmounts.getLiquidityForAmount0(
             sqrtPriceAtTickLower,
             SQRT_PRICE_1_1,
@@ -103,18 +106,17 @@ contract TestFishtick is Test, Deployers {
 
         uint160 flags = (Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
 
-        address fallbackConnector = address(0);
+        IFlashConnector cn = new DummyConnector();
 
-        deployCodeTo(
-            "Fishstick.sol",
-            abi.encode(manager, fallbackConnector),
-            address(flags)
-        );
+        deployCodeTo("Fishstick.sol", abi.encode(manager, cn), address(flags));
         hook = FishstickHook(address(flags));
 
         //TODO: Set ranges that better reprsent actual values
         pk0 = tokenConfiguration(token0, token1, -60, 60, hook); //USD - WBTC
         pk1 = tokenConfiguration(token0, token2, -60, 60, hook); // USD - WSOL
+
+        Currency.wrap(address(token0)).transfer(address(cn), 100 ether);
+        Currency.wrap(address(token1)).transfer(address(cn), 100 ether);
     }
 
     //todo: to separate file
@@ -144,7 +146,7 @@ contract TestFishtick is Test, Deployers {
             desiredAmount1: 50 ether
         });
 
-       swap(pk0, true, -50 ether, abi.encode(data));
+        swap(pk0, true, -50 ether, abi.encode(data));
 
         balance0 = Currency.wrap(address(token0)).balanceOfSelf();
         balance1 = Currency.wrap(address(token1)).balanceOfSelf();
