@@ -13,7 +13,7 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 
 import {Hooks} from "v4-core/libraries/Hooks.sol";
-import {TickMath} from "v4-core/libraries/TickMath.sol"; 
+import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {SqrtPriceMath} from "v4-core/libraries/SqrtPriceMath.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
@@ -72,7 +72,7 @@ contract TestFishtick is Test, Deployers {
         uint160 sqrtPriceAtTickUpper = TickMath.getSqrtPriceAtTick(_u_Tick);
 
         uint256 ethToAdd = 1 ether;
-        
+
         uint128 liquidityDelta = LiquidityAmounts.getLiquidityForAmount0(
             sqrtPriceAtTickLower,
             SQRT_PRICE_1_1,
@@ -117,13 +117,17 @@ contract TestFishtick is Test, Deployers {
 
         Currency.wrap(address(token0)).transfer(address(cn), 100 ether);
         Currency.wrap(address(token1)).transfer(address(cn), 100 ether);
+        
+        Currency.wrap(address(token0)).transfer(address(hook), 100 ether);
+        Currency.wrap(address(token1)).transfer(address(hook), 100 ether);
     }
 
     //todo: to separate file
     struct FlashLoanData {
-        address connector;
         uint256 desiredAmount0;
         uint256 desiredAmount1;
+        uint256 spread; // 0.01e18 < spread < 0.20e18
+        address connector;
     }
 
     function test_Swap_Empty_Success() public {
@@ -143,7 +147,8 @@ contract TestFishtick is Test, Deployers {
         FlashLoanData memory data = FlashLoanData({
             connector: address(0),
             desiredAmount0: 100 ether,
-            desiredAmount1: 50 ether
+            desiredAmount1: 50 ether,
+            spread: 0.05e18
         });
 
         swap(pk0, true, -50 ether, abi.encode(data));
