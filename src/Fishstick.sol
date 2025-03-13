@@ -80,7 +80,7 @@ contract FishstickHook is BaseHook, TransientStorage {
         bytes calldata hookData
     ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
         console.log("Before swap");
-        FlashLoanData memory data = abi.decode(hookData, (FlashLoanData));
+        FlashLoanData memory data = abi.decode(hookData, (FlashLoanData)); //todo: move to lib?
         if (!((0.01e18 < data.spread) && (data.spread < 0.20e18))) {
             revert("Invalid spread");
         }
@@ -282,7 +282,10 @@ contract FishstickHook is BaseHook, TransientStorage {
         console.log("After swap delta1");
         console.logInt(delta1);
 
+        //todo: use user funds to repay poolManager
         _resolveDeltas(key, delta0, delta1);
+
+        //todo: repay the loan
 
         return (BaseHook.afterSwap.selector, 0);
     }
@@ -292,6 +295,7 @@ contract FishstickHook is BaseHook, TransientStorage {
         int256 delta0,
         int256 delta1
     ) internal {
+        //todo: create a function to handle single delta
         console.log("d01");
         if (delta0 < 0) {
             // pay currency from an arbitrary capital source to the PoolManager
