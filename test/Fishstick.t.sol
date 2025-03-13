@@ -131,30 +131,27 @@ contract TestFishtick is Test, Deployers {
     }
 
     function test_Swap_Empty_Success() public {
-        IPoolManager.SwapParams memory tempParams = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: -10 ether, // Exact input for output swap
-            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
-        });
-
+        
         uint128 liquidity = manager.getLiquidity(pk0.toId());
         // assertEq(liquidity, 0);
 
         uint256 balance0 = Currency.wrap(address(token0)).balanceOfSelf();
         uint256 balance1 = Currency.wrap(address(token1)).balanceOfSelf();
+        console.log("Test balance");
         console.log(balance0, balance1);
 
         FlashLoanData memory data = FlashLoanData({
             connector: address(0),
             desiredAmount0: 100 ether,
-            desiredAmount1: 50 ether,
+            desiredAmount1: 100 ether,
             spread: 0.05e18
         });
 
-        swap(pk0, true, -50 ether, abi.encode(data));
+        swap(pk0, true, -1 ether, abi.encode(data));
 
         balance0 = Currency.wrap(address(token0)).balanceOfSelf();
         balance1 = Currency.wrap(address(token1)).balanceOfSelf();
+        console.log("Result");
         console.log(balance0, balance1);
 
         // uint128 liquidity = manager.getLiquidity(pk0.toId());

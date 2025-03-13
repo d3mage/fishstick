@@ -29,6 +29,7 @@ contract FishstickHook is BaseHook, TransientStorage {
     using StateLibrary for IPoolManager;
     using TransientStateLibrary for IPoolManager;
     // using CurrencyLibrary for Currency;
+    
 
     IFlashConnector private fallbackConnector;
 
@@ -145,7 +146,9 @@ contract FishstickHook is BaseHook, TransientStorage {
             tick,
             data.spread,
             params.zeroForOne
-        );
+        ); //todo: this is  faulty. needs to be fixed
+        tickLower = -60; //todo: temp
+        tickUpper = 60; //todo: temp
 
         console.log("TickLower");
         console.logInt(int256(tickLower));
@@ -160,6 +163,10 @@ contract FishstickHook is BaseHook, TransientStorage {
             reserve1
         );
 
+        console.log("\n");
+        console.log("Liquidity before add liq");
+        console.log(poolManager.getLiquidity(key.toId()));
+
         (BalanceDelta totalDelta, BalanceDelta feesAccrued) = poolManager
             .modifyLiquidity(
                 key,
@@ -172,16 +179,15 @@ contract FishstickHook is BaseHook, TransientStorage {
                 "" //we don't provide any hook data
             );
 
+        console.log("Liquidity after add liq");
+        console.log(poolManager.getLiquidity(key.toId()));
+        console.log("\n");
+
+
         console.log("Balance after add liquidity");
         console.log(key.currency0.balanceOf(address(this)));
         console.log(key.currency1.balanceOf(address(this)));
-
-        console.log("total delta before swap");
-        console.logInt(totalDelta.amount0());
-        console.logInt(totalDelta.amount1());
-        console.log("fees accrued before swap");
-        console.logInt(feesAccrued.amount0());
-        console.logInt(feesAccrued.amount1());
+        console.log("\n");
 
         _storeLiquidity(liquidity);
         _storeTicks(tickLower, tickUpper);
@@ -257,7 +263,7 @@ contract FishstickHook is BaseHook, TransientStorage {
                 }),
                 "" //we don't provide any hook data
             );
-
+        
         console.log("Balance after add liquidity");
         console.log(key.currency0.balanceOf(address(this)));
         console.log(key.currency1.balanceOf(address(this)));
