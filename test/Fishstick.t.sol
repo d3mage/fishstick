@@ -20,9 +20,10 @@ import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 
-import "forge-std/console.sol";
+import "forge-std/console.sol"; //todo: remove
 import {FishstickHook} from "../src/Fishstick.sol";
 import {IFlashConnector} from "../src/connectors/IFlashConnector.sol";
+import {FlashLoanHookData} from "../src/FlashLoanHookData.sol";
 import {DummyConnector} from "./DummyConnector.sol";
 
 contract TestFishtick is Test, Deployers {
@@ -37,6 +38,8 @@ contract TestFishtick is Test, Deployers {
     PoolKey pk1;
 
     FishstickHook hook;
+
+    address alice = makeAddr("ALICE");
 
     function tokenConfiguration(
         MockERC20 _token0,
@@ -117,21 +120,12 @@ contract TestFishtick is Test, Deployers {
 
         Currency.wrap(address(token0)).transfer(address(cn), 100 ether);
         Currency.wrap(address(token1)).transfer(address(cn), 100 ether);
-        
+
         Currency.wrap(address(token0)).transfer(address(hook), 100 ether);
         Currency.wrap(address(token1)).transfer(address(hook), 100 ether);
     }
 
-    //todo: to separate file
-    struct FlashLoanData {
-        uint256 desiredAmount0;
-        uint256 desiredAmount1;
-        uint256 spread; // 0.01e18 < spread < 0.20e18
-        address connector;
-    }
-
     function test_Swap_Empty_Success() public {
-        
         uint128 liquidity = manager.getLiquidity(pk0.toId());
         // assertEq(liquidity, 0);
 
@@ -140,11 +134,12 @@ contract TestFishtick is Test, Deployers {
         console.log("Test balance");
         console.log(balance0, balance1);
 
-        FlashLoanData memory data = FlashLoanData({
+        FlashLoanHookData memory data = FlashLoanHookData({
             connector: address(0),
             desiredAmount0: 100 ether,
             desiredAmount1: 100 ether,
-            spread: 0.05e18
+            spread: 0.05e18,
+            caller: alice
         });
 
         swap(pk0, true, -1 ether, abi.encode(data));

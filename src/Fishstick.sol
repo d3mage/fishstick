@@ -21,6 +21,7 @@ import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {FixedPointMathLib} from "solmate/src/utils/FixedPointMathLib.sol";
 
 import {TransientStorage} from "./TransientStorage.sol";
+import {FlashLoanHookData} from "./FlashLoanHookData.sol";
 import {IFlashConnector} from "./connectors/IFlashConnector.sol";
 
 import "forge-std/console.sol";
@@ -29,7 +30,6 @@ contract FishstickHook is BaseHook, TransientStorage {
     using StateLibrary for IPoolManager;
     using TransientStateLibrary for IPoolManager;
     // using CurrencyLibrary for Currency;
-    
 
     IFlashConnector private fallbackConnector;
 
@@ -65,14 +65,6 @@ contract FishstickHook is BaseHook, TransientStorage {
             });
     }
 
-    //todo: to separate file
-    struct FlashLoanData {
-        uint256 desiredAmount0;
-        uint256 desiredAmount1;
-        uint256 spread; // 0.01e18 < spread < 0.20e18
-        address connector;
-    }
-
     function _beforeSwap(
         address sender,
         PoolKey calldata key,
@@ -80,7 +72,10 @@ contract FishstickHook is BaseHook, TransientStorage {
         bytes calldata hookData
     ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
         console.log("Before swap");
-        FlashLoanData memory data = abi.decode(hookData, (FlashLoanData)); //todo: move to lib?
+        FlashLoanHookData memory data = abi.decode(
+            hookData,
+            (FlashLoanHookData)
+        ); //todo: move to lib?
         if (!((0.01e18 < data.spread) && (data.spread < 0.20e18))) {
             revert("Invalid spread");
         }
@@ -101,7 +96,7 @@ contract FishstickHook is BaseHook, TransientStorage {
         address sender,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata params,
-        FlashLoanData memory data,
+        FlashLoanHookData memory data,
         IFlashConnector cn
     ) internal {
         (uint256 reserve0, uint256 reserve1) = cn.getAvailableReserves(
@@ -183,7 +178,6 @@ contract FishstickHook is BaseHook, TransientStorage {
         console.log(poolManager.getLiquidity(key.toId()));
         console.log("\n");
 
-
         console.log("Balance after add liquidity");
         console.log(key.currency0.balanceOf(address(this)));
         console.log(key.currency1.balanceOf(address(this)));
@@ -263,7 +257,7 @@ contract FishstickHook is BaseHook, TransientStorage {
                 }),
                 "" //we don't provide any hook data
             );
-        
+
         console.log("Balance after add liquidity");
         console.log(key.currency0.balanceOf(address(this)));
         console.log(key.currency1.balanceOf(address(this)));
