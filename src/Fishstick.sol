@@ -85,7 +85,7 @@ contract FishstickHook is BaseHook, TransientStorage {
             ? fallbackConnector
             : IFlashConnector(data.connector);
 
-        _beforeSwapInline(key, params, data, cn);
+        _beforeSwapInline(key, params, data, cn, data.caller);
 
         return (
             BaseHook.beforeSwap.selector,
@@ -202,7 +202,7 @@ contract FishstickHook is BaseHook, TransientStorage {
                 _calculateTick(
                     sqrtPriceX96,
                     poolKey.tickSpacing,
-                    int256(-spread)
+                    -int256(spread)
                 ),
                 poolTick
             );
