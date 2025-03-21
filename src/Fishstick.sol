@@ -75,15 +75,17 @@ contract FishstickHook is BaseHook, TransientStorage {
         FlashLoanHookData memory data = abi.decode(
             hookData,
             (FlashLoanHookData)
-        ); //todo: move to lib?
+        );
+
         if (!((0.01e18 < data.spread) && (data.spread < 0.20e18))) {
             revert("Invalid spread");
         }
+
         IFlashConnector cn = data.connector == address(0)
             ? fallbackConnector
             : IFlashConnector(data.connector);
 
-        _beforeSwapInline(sender, key, params, data, cn);
+        _beforeSwapInline(key, params, data, cn);
 
         return (
             BaseHook.beforeSwap.selector,
@@ -93,11 +95,11 @@ contract FishstickHook is BaseHook, TransientStorage {
     }
 
     function _beforeSwapInline(
-        address sender,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata params,
         FlashLoanHookData memory data,
-        IFlashConnector cn
+        IFlashConnector cn,
+        address caller
     ) internal {
         (uint256 reserve0, uint256 reserve1) = cn.getAvailableReserves(
             Currency.unwrap(key.currency0),
@@ -111,44 +113,28 @@ contract FishstickHook is BaseHook, TransientStorage {
             ? data.desiredAmount1
             : reserve1;
 
-        console.log(reserve0, reserve1);
-
-        console.log("Balance before");
-        console.log(key.currency0.balanceOf(address(this)));
-        console.log(key.currency1.balanceOf(address(this)));
 
         cn.loan(
             Currency.unwrap(key.currency0),
             Currency.unwrap(key.currency1),
-            address(this),
+            caller,
             reserve0,
             reserve1
         );
 
-        console.log("Loaned");
-        console.log("Balance after loan");
-        console.log(key.currency0.balanceOf(address(this)));
-        console.log(key.currency1.balanceOf(address(this)));
-
-        //todo: optimize the calls
         (uint160 sqrtPriceX96, int24 tick, , ) = poolManager.getSlot0(
             key.toId()
         );
 
         (int24 tickLower, int24 tickUpper) = _calculateTicks(
             key,
-            sqrtPriceX96,
+            uint256(sqrtPriceX96),
             tick,
             data.spread,
             params.zeroForOne
         ); //todo: this is  faulty. needs to be fixed
-        tickLower = -60; //todo: temp
-        tickUpper = 60; //todo: temp
-
-        console.log("TickLower");
-        console.logInt(int256(tickLower));
-        console.log("TickUpper");
-        console.logInt(int256(tickUpper));
+        tickLower = -120; //todo: temp
+        tickUpper = 240; //todo: temp
 
         uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
             sqrtPriceX96,
@@ -158,44 +144,32 @@ contract FishstickHook is BaseHook, TransientStorage {
             reserve1
         );
 
-        console.log("\n");
-        console.log("Liquidity before add liq");
-        console.log(poolManager.getLiquidity(key.toId()));
+        // (BalanceDelta totalDelta, BalanceDelta feesAccrued) =
+        poolManager.modifyLiquidity(
+            key,
+            IPoolManager.ModifyLiquidityParams({
+                tickLower: tickLower,
+                tickUpper: tickUpper,
+                liquidityDelta: int256(uint256(liquidity)),
+                salt: bytes32(0)
+            }),
+            "" //we don't provide any hook data
+        );
 
-        (BalanceDelta totalDelta, BalanceDelta feesAccrued) = poolManager
-            .modifyLiquidity(
-                key,
-                IPoolManager.ModifyLiquidityParams({
-                    tickLower: tickLower,
-                    tickUpper: tickUpper,
-                    liquidityDelta: int256(uint256(liquidity)),
-                    salt: bytes32(0)
-                }),
-                "" //we don't provide any hook data
-            );
-
-        console.log("Liquidity after add liq");
-        console.log(poolManager.getLiquidity(key.toId()));
-        console.log("\n");
-
-        console.log("Balance after add liquidity");
-        console.log(key.currency0.balanceOf(address(this)));
-        console.log(key.currency1.balanceOf(address(this)));
-        console.log("\n");
-
+        _storeCaller(data.caller);
         _storeLiquidity(liquidity);
         _storeTicks(tickLower, tickUpper);
     }
 
     //todo: create a separate lib with pure functions?
     function _calculateTick(
-        uint160 sqrtPriceX96,
+        uint256 sqrtPriceX96,
         int24 tickSpacing,
         int256 spread //todo: lower the number of conversions
     ) internal pure returns (int24) {
         uint160 sqrtPrice = uint160(
             FixedPointMathLib.mulDivDown(
-                uint256(sqrtPriceX96),
+                sqrtPriceX96,
                 FixedPointMathLib.sqrt(uint256(1e18 + spread)),
                 FixedPointMathLib.sqrt(1e18) //todo: hardcode?
             )
@@ -207,7 +181,7 @@ contract FishstickHook is BaseHook, TransientStorage {
 
     function _calculateTicks(
         PoolKey calldata poolKey,
-        uint160 sqrtPriceX96, //todo: convert before
+        uint256 sqrtPriceX96,
         int24 poolTick,
         uint256 spread,
         bool zeroForOne
@@ -228,7 +202,7 @@ contract FishstickHook is BaseHook, TransientStorage {
                 _calculateTick(
                     sqrtPriceX96,
                     poolKey.tickSpacing,
-                    -int256(spread)
+                    int256(-spread)
                 ),
                 poolTick
             );
@@ -258,10 +232,6 @@ contract FishstickHook is BaseHook, TransientStorage {
                 "" //we don't provide any hook data
             );
 
-        console.log("Balance after add liquidity");
-        console.log(key.currency0.balanceOf(address(this)));
-        console.log(key.currency1.balanceOf(address(this)));
-
         console.log("total delta after swap");
         console.logInt(totalDelta.amount0());
         console.logInt(totalDelta.amount1());
@@ -271,12 +241,6 @@ contract FishstickHook is BaseHook, TransientStorage {
 
         int256 delta0 = poolManager.currencyDelta(address(this), key.currency0);
         int256 delta1 = poolManager.currencyDelta(address(this), key.currency1);
-        console.log("After swap delta0");
-        console.logInt(delta0);
-        console.log("After swap delta1");
-        console.logInt(delta1);
-
-        //todo: use user funds to repay poolManager
         _resolveDeltas(key, delta0, delta1);
 
         //todo: repay the loan
@@ -284,48 +248,39 @@ contract FishstickHook is BaseHook, TransientStorage {
         return (BaseHook.afterSwap.selector, 0);
     }
 
+    function _handleDelta(
+        Currency currency,
+        int256 delta
+    ) internal {
+        if (delta < 0) {
+            _sendToPoolManager(currency, uint256(-delta));
+        } else if (delta > 0) {
+            poolManager.mint(
+                _loadCaller(),
+                currency.toId(),
+                uint256(delta)
+            );
+        }
+    }
+
     function _resolveDeltas(
         PoolKey calldata key,
         int256 delta0,
         int256 delta1
     ) internal {
-        //todo: create a function to handle single delta
-        console.log("d01");
-        if (delta0 < 0) {
-            // pay currency from an arbitrary capital source to the PoolManager
-            _sendToPoolManager(key.currency0, uint256(-delta0));
-        } else if (delta0 > 0) {
-            // transfer funds to recipient, must use ERC6909 because the swapper has not transferred ERC20 yet
-            poolManager.mint(
-                tx.origin, //todo: include into calldata
-                key.currency0.toId(),
-                uint256(delta0)
-            );
-        }
-        console.log("d11");
-        if (delta1 < 0) {
-            // pay currency from an arbitrary capital source to the PoolManager
-            _sendToPoolManager(key.currency1, uint256(-delta1));
-        } else if (delta1 > 0) {
-            // transfer funds to recipient, must use ERC6909 because the swapper has not transferred ERC20 yet
-            poolManager.mint(
-                tx.origin, //todo: include into calldata
-                key.currency1.toId(),
-                uint256(delta1)
-            );
-        }
+        _handleDelta(key.currency0, delta0);
+        _handleDelta(key.currency1, delta1);
     }
 
-    //todo: review this
     function _sendToPoolManager(Currency currency, uint256 amount) internal {
         poolManager.sync(currency);
-        console.log(currency.balanceOf(address(this)));
-        // IERC20(Currency.unwrap(currency)).transferFrom(
-        //     address(this), //todo: TRANSFER FROM USER, NOT HOOK
-        //     address(poolManager),
-        //     amount
-        // );
-        currency.transfer(address(poolManager), amount); //todo: THSI IS TO BE REMOVED!!!
+        address caller = _loadCaller();
+
+        IERC20(Currency.unwrap(currency)).transferFrom(
+            caller,
+            address(poolManager),
+            amount
+        );
         poolManager.settle();
     }
 

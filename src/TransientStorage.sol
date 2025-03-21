@@ -5,6 +5,7 @@ contract TransientStorage {
     bytes32 constant TICK_LOWER_SLOT = keccak256("tickLower");
     bytes32 constant TICK_UPPER_SLOT = keccak256("tickUpper");
     bytes32 constant LIQUIDITY_SLOT = keccak256("liquidity");
+    bytes32 constant CALLER_SLOT = keccak256("caller");
 
     function _storeTicks(int24 tickLower, int24 tickUpper) internal {
         bytes32 tickLowerSlot = TICK_LOWER_SLOT;
@@ -40,6 +41,20 @@ contract TransientStorage {
         bytes32 liquiditySlot = LIQUIDITY_SLOT;
         assembly {
             liquidity := tload(liquiditySlot)
+        }
+    }
+
+    function _storeCaller(address _caller) internal {
+        bytes32 callerSlot = CALLER_SLOT;
+        assembly {
+            tstore(callerSlot, _caller)
+        }
+    }
+
+    function _loadCaller() internal view returns (address _caller) {
+        bytes32 callerSlot = CALLER_SLOT;
+        assembly {
+            _caller := tload(callerSlot)
         }
     }
 }

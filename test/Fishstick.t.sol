@@ -32,10 +32,12 @@ contract TestFishtick is Test, Deployers {
 
     MockERC20 token0; // USDC
     MockERC20 token1; // wBTC
-    MockERC20 token2; // wSOL
+    MockERC20 token2; // MOCK
 
     PoolKey pk0;
     PoolKey pk1;
+
+    Currency currency2;
 
     FishstickHook hook;
 
@@ -43,27 +45,23 @@ contract TestFishtick is Test, Deployers {
 
     function tokenConfiguration(
         MockERC20 _token0,
-        MockERC20 _token1,
-        int24 _l_Tick,
-        int24 _u_Tick,
-        IHooks _hook
-    ) internal returns (PoolKey memory pk) {
-        (pk, ) = initPool(
-            Currency.wrap(address(_token0)),
-            Currency.wrap(address(_token1)),
-            IHooks(_hook), // Hook Contract
-            3000, // Swap Fees
-            SQRT_PRICE_1_1 // Initial Sqrt(P) value = 1
-        );
-
+        MockERC20 _token1
+    ) internal {
         _token0.mint(address(this), 10000 ether);
         _token0.approve(address(swapRouter), type(uint256).max);
         _token0.approve(address(modifyLiquidityRouter), type(uint256).max);
-        _token1.mint(address(this), 1000 ether);
+        _token1.mint(address(this), 10000 ether);
         _token1.approve(address(swapRouter), type(uint256).max);
         _token1.approve(address(modifyLiquidityRouter), type(uint256).max);
+    }
 
-        // addLiquidity(pk, _l_Tick, _u_Tick);
+    function createPool(
+        Currency _currency0,
+        Currency _currency1
+    ) internal returns (PoolKey memory) {
+        PoolKey memory pk = PoolKey(_currency0, _currency1, 3000, 60, hook);
+        manager.initialize(pk, SQRT_PRICE_1_1);
+        return pk;
     }
 
     function addLiquidity(
@@ -100,39 +98,59 @@ contract TestFishtick is Test, Deployers {
     }
 
     function setUp() public {
+        console.log("Alice", alice);
+
         deployFreshManagerAndRouters();
 
         //Let's simulate a few tokens.
         token0 = new MockERC20("USDC", "USDC", 18);
         token1 = new MockERC20("WBTC", "WBTC", 18);
-        token2 = new MockERC20("WSOL", "WSOL", 18);
+        token2 = new MockERC20("MOCK", "MOCK", 18);
+        currency0 = Currency.wrap(address(token0));
+        currency1 = Currency.wrap(address(token1));
+        currency2 = Currency.wrap(address(token2));
+        tokenConfiguration(token0, token1); //USD - WBTC
+        tokenConfiguration(token0, token2); // USD - MOCK
 
-        uint160 flags = (Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
-
+        //Deploy Dummy connector and fund it
         IFlashConnector cn = new DummyConnector();
+        currency0.transfer(address(cn), 100 ether);
+        currency1.transfer(address(cn), 100 ether);
 
+        //Deploy Fishstick hook
+        uint160 flags = (Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
         deployCodeTo("Fishstick.sol", abi.encode(manager, cn), address(flags));
         hook = FishstickHook(address(flags));
 
-        //TODO: Set ranges that better reprsent actual values
-        pk0 = tokenConfiguration(token0, token1, -60, 60, hook); //USD - WBTC
-        pk1 = tokenConfiguration(token0, token2, -60, 60, hook); // USD - WSOL
+        //Create pools
+        pk0 = createPool(currency0, currency1);
+        pk1 = createPool(currency0, currency2);
 
-        Currency.wrap(address(token0)).transfer(address(cn), 100 ether);
-        Currency.wrap(address(token1)).transfer(address(cn), 100 ether);
-
-        Currency.wrap(address(token0)).transfer(address(hook), 100 ether);
-        Currency.wrap(address(token1)).transfer(address(hook), 100 ether);
+        currency0.transfer(alice, 1000 ether);
+        currency1.transfer(alice, 1000 ether);
+        currency2.transfer(alice, 1000 ether);
     }
 
-    function test_Swap_Empty_Success() public {
+    function test_Swap_Zero_For_One_Empty_Success() public {
         uint128 liquidity = manager.getLiquidity(pk0.toId());
-        // assertEq(liquidity, 0);
+        assertEq(liquidity, 0);
 
-        uint256 balance0 = Currency.wrap(address(token0)).balanceOfSelf();
-        uint256 balance1 = Currency.wrap(address(token1)).balanceOfSelf();
-        console.log("Test balance");
-        console.log(balance0, balance1);
+        uint256 initZeroBalance = currency0.balanceOf(alice);
+        uint256 initOneBalance = currency1.balanceOf(alice);
+        console.log("Initial balance");
+        console.log(initZeroBalance, initOneBalance);
+
+        vm.startPrank(alice);
+        token0.approve(address(hook), type(uint256).max);
+        token1.approve(address(hook), type(uint256).max);
+        //todo: somehow sendToPoolManager requires an approve for transferFrom. investigate it further
+        token0.approve(address(manager), type(uint256).max);
+        token1.approve(address(manager), type(uint256).max);
+
+        //approve PoolSwapTest
+        token0.approve(0x2e234DAe75C793f67A35089C9d99245E1C58470b, type(uint256).max);
+        token1.approve(0x2e234DAe75C793f67A35089C9d99245E1C58470b, type(uint256).max);
+        vm.stopPrank();
 
         FlashLoanHookData memory data = FlashLoanHookData({
             connector: address(0),
@@ -142,14 +160,16 @@ contract TestFishtick is Test, Deployers {
             caller: alice
         });
 
-        swap(pk0, true, -1 ether, abi.encode(data));
+        vm.startPrank(alice);
+        swap(pk0, true, -50 ether, abi.encode(data));
+        vm.stopPrank();
 
-        balance0 = Currency.wrap(address(token0)).balanceOfSelf();
-        balance1 = Currency.wrap(address(token1)).balanceOfSelf();
-        console.log("Result");
-        console.log(balance0, balance1);
+        uint256 resultZeroBalance = currency0.balanceOf(alice);
+        uint256 resultOneBalance = currency1.balanceOf(alice);
+        console.log("Result balance");
+        console.log(resultZeroBalance, resultOneBalance);
 
-        // uint128 liquidity = manager.getLiquidity(pk0.toId());
-        // assertEq(liquidity, 0);
+        liquidity = manager.getLiquidity(pk0.toId());
+        assertEq(liquidity, 0);
     }
 }
