@@ -129,16 +129,6 @@ contract TestFishtick is Test, Deployers {
         currency0.transfer(alice, 1000 ether);
         currency1.transfer(alice, 1000 ether);
         currency2.transfer(alice, 1000 ether);
-    }
-
-    function test_Swap_Zero_For_One_Empty_Success() public {
-        uint128 liquidity = manager.getLiquidity(pk0.toId());
-        assertEq(liquidity, 0);
-
-        uint256 initZeroBalance = currency0.balanceOf(alice);
-        uint256 initOneBalance = currency1.balanceOf(alice);
-        console.log("Initial balance");
-        console.log(initZeroBalance, initOneBalance);
 
         vm.startPrank(alice);
         token0.approve(address(hook), type(uint256).max);
@@ -150,7 +140,22 @@ contract TestFishtick is Test, Deployers {
         //approve PoolSwapTest
         token0.approve(0x2e234DAe75C793f67A35089C9d99245E1C58470b, type(uint256).max);
         token1.approve(0x2e234DAe75C793f67A35089C9d99245E1C58470b, type(uint256).max);
+
+        //approve DummyConnector
+        token0.approve(address(cn), type(uint256).max);
+        token1.approve(address(cn), type(uint256).max);
+
         vm.stopPrank();
+    }
+
+    function test_Swap_Zero_For_One_Empty_Success() public {
+        uint128 liquidity = manager.getLiquidity(pk0.toId());
+        assertEq(liquidity, 0);
+
+        uint256 initZeroBalance = currency0.balanceOf(alice);
+        uint256 initOneBalance = currency1.balanceOf(alice);
+        console.log("Initial balance");
+        console.log(initZeroBalance, initOneBalance);
 
         FlashLoanHookData memory data = FlashLoanHookData({
             connector: address(0),

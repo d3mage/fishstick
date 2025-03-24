@@ -11,6 +11,14 @@ interface IFlashConnector {
         uint256 amount1
     ) external;
 
+    function repayLoan(
+        address token0,
+        address token1,
+        address who,
+        uint256 amount0,
+        uint256 amount1
+    ) external;
+
     function getAvailableReserves(
         address token0,
         address token1

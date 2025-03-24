@@ -6,6 +6,9 @@ contract TransientStorage {
     bytes32 constant TICK_UPPER_SLOT = keccak256("tickUpper");
     bytes32 constant LIQUIDITY_SLOT = keccak256("liquidity");
     bytes32 constant CALLER_SLOT = keccak256("caller");
+    bytes32 constant RESERVE0_SLOT = keccak256("reserve0");
+    bytes32 constant RESERVE1_SLOT = keccak256("reserve1");
+    bytes32 constant CN_SLOT = keccak256("cn");
 
     function _storeTicks(int24 tickLower, int24 tickUpper) internal {
         bytes32 tickLowerSlot = TICK_LOWER_SLOT;
@@ -55,6 +58,43 @@ contract TransientStorage {
         bytes32 callerSlot = CALLER_SLOT;
         assembly {
             _caller := tload(callerSlot)
+        }
+    }
+
+    function _storeReserves(uint256 reserve0, uint256 reserve1) internal {
+        bytes32 reserve0Slot = RESERVE0_SLOT;
+        bytes32 reserve1Slot = RESERVE1_SLOT;
+
+        assembly {
+            tstore(reserve0Slot, reserve0)
+            tstore(reserve1Slot, reserve1)
+        }
+    }
+
+    function _loadReserves()
+        internal
+        view
+        returns (uint256 reserve0, uint256 reserve1)
+    {
+        bytes32 reserve0Slot = RESERVE0_SLOT;
+        bytes32 reserve1Slot = RESERVE1_SLOT;
+        assembly {
+            reserve0 := tload(reserve0Slot)
+            reserve1 := tload(reserve1Slot)
+        }
+    }
+
+    function _storeCN(address cn) internal {
+        bytes32 cnSlot = CN_SLOT;
+        assembly {
+            tstore(cnSlot, cn)
+        }
+    }
+
+    function _loadCN() internal view returns (address cn) {
+        bytes32 cnSlot = CN_SLOT;
+        assembly {
+            cn := tload(cnSlot)
         }
     }
 }

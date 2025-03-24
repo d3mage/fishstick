@@ -113,7 +113,6 @@ contract FishstickHook is BaseHook, TransientStorage {
             ? data.desiredAmount1
             : reserve1;
 
-
         cn.loan(
             Currency.unwrap(key.currency0),
             Currency.unwrap(key.currency1),
@@ -159,6 +158,8 @@ contract FishstickHook is BaseHook, TransientStorage {
         _storeCaller(data.caller);
         _storeLiquidity(liquidity);
         _storeTicks(tickLower, tickUpper);
+        _storeReserves(reserve0, reserve1);
+        _storeCN(address(cn));
     }
 
     //todo: create a separate lib with pure functions?
@@ -242,24 +243,33 @@ contract FishstickHook is BaseHook, TransientStorage {
         int256 delta0 = poolManager.currencyDelta(address(this), key.currency0);
         int256 delta1 = poolManager.currencyDelta(address(this), key.currency1);
         _resolveDeltas(key, delta0, delta1);
-
-        //todo: repay the loan
-
+        console.log("resolved deltas");
+        _repayLoan(key);
+        console.log("finished after swap");
         return (BaseHook.afterSwap.selector, 0);
     }
 
-    function _handleDelta(
-        Currency currency,
-        int256 delta
-    ) internal {
+    function _repayLoan(PoolKey calldata key) internal {
+        IFlashConnector cn = IFlashConnector(_loadCN());
+        (uint256 reserve0, uint256 reserve1) = _loadReserves();
+        try
+            cn.repayLoan(
+                Currency.unwrap(key.currency0),
+                Currency.unwrap(key.currency1),
+                _loadCaller(),
+                reserve0,
+                reserve1
+            )  //todo: change it to a call
+        {} catch {
+            revert("Unable to repay");
+        }
+    }
+
+    function _handleDelta(Currency currency, int256 delta) internal {
         if (delta < 0) {
             _sendToPoolManager(currency, uint256(-delta));
         } else if (delta > 0) {
-            poolManager.mint(
-                _loadCaller(),
-                currency.toId(),
-                uint256(delta)
-            );
+            poolManager.mint(_loadCaller(), currency.toId(), uint256(delta));
         }
     }
 
